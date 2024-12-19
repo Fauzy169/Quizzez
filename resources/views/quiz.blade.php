@@ -13,7 +13,7 @@
         }
 
         .question-map-btn.active {
-            background-color: #0d6efd;
+            background-color: #0d6efd; /* Blue color for the active question */
             color: white;
         }
 
@@ -23,12 +23,45 @@
         }
 
         .answered {
-            background-color: #28a745;
+            background-color: #28a745; /* Green for confirmed answer */
             color: white;
         }
 
-        .question-map-btn.ragu-ragu {
-            background-color: #ffc107; /* Warna kuning untuk ragu-ragu */
+        .ragu-ragu {
+            background-color: #ffc107; /* Yellow for unsure (ragu-ragu) */
+            color: white;
+        }
+
+        .ragu-ragu-btn {
+    position: relative;
+    padding-left: 30px; /* Beri ruang di sebelah kiri untuk kotak centang */
+}
+
+        .ragu-ragu-btn .check-icon {
+            position: absolute;
+            top: 50%;
+            left: 10px;
+            transform: translateY(-50%);
+            font-size: 18px;
+            color: white;
+            visibility: hidden; /* Hide the check icon initially */
+        }
+
+        .ragu-ragu-btn .check-box {
+            width: 20px;
+            height: 20px;
+            background-color: white;
+            border: 2px solid #ffc107; /* Yellow border for the box */
+            border-radius: 3px;
+            margin-right: 10px;
+        }
+
+        .ragu-ragu-btn.checked .check-icon {
+            visibility: visible; /* Show the check icon when checked */
+        }
+
+        .question-map-btn:not(.answered):not(.ragu-ragu):not(.active) {
+            background-color: #6c757d;
             color: white;
         }
     </style>
@@ -44,12 +77,15 @@
                 <div id="options-container">
                     @foreach($questions[0]->options as $option)
                         <button class="btn btn-outline-secondary w-100 mb-3 answer-btn" 
-                                onclick="selectAnswer(this)">{{ $option->option_text }}</button>
+                                onclick="selectAnswer(this, {{ $loop->index }})">{{ $option->option_text }}</button>
                     @endforeach
                 </div>
                 <div class="d-flex gap-3 mt-3">
                     <button id="prev-btn" class="btn btn-primary px-4 py-2" onclick="changeQuestion('prev')" disabled>Previous</button>
-                    <button id="ragu-btn" class="btn btn-warning px-4 py-2" onclick="markAsRagu()">Ragu-Ragu</button>
+                    <button id="ragu-ragu-btn" class="btn btn-warning px-4 py-2 ragu-ragu-btn" onclick="markRaguRagu()">
+                        <span class="check-box"></span> Ragu-Ragu
+                        <span class="check-icon">&#10004;</span>
+                    </button>
                     <button id="next-btn" class="btn btn-success px-4 py-2" onclick="changeQuestion('next')">Next</button>
                 </div>
             </div>
@@ -77,7 +113,7 @@
     let questions = @json($questions); 
     let currentQuestionIndex = 1; // Start with question 1
     let answers = Array(questions.length).fill(null); // Initialize an array to store answers (null means no answer selected)
-    let raguQuestions = Array(questions.length).fill(false); // Array to track ragu-ragu status
+    let raguRagu = Array(questions.length).fill(false); // Track which questions are marked as ragu-ragu
 
     // Function to update question and its options
     function updateQuestion() {
@@ -98,9 +134,14 @@
                 button.onclick = () => selectAnswer(button, index); // Add click event with option index
                 optionsContainer.appendChild(button); // Append to container
                 
-                // Mark the selected option if it was previously answered
+                // Highlight selected option if it is the current answer
                 if (answers[currentQuestionIndex - 1] === index) {
-                    button.classList.add('active'); // Highlight selected option
+                    button.classList.add('answered'); // Highlight selected option in green
+                }
+
+                // If this question is marked as ragu-ragu, highlight the selected option only
+                if (raguRagu[currentQuestionIndex - 1] && answers[currentQuestionIndex - 1] === index) {
+                    button.classList.add('ragu-ragu');
                 }
             });
         } else {
@@ -112,9 +153,20 @@
 
         // Update Question Map active state
         document.querySelectorAll('.question-map-btn').forEach((btn, index) => {
+            // Mark as active if current question is selected
             btn.classList.toggle('active', index + 1 === currentQuestionIndex);
-            btn.classList.toggle('answered', answers[index] !== null);
-            btn.classList.toggle('ragu-ragu', raguQuestions[index]); // Add ragu-ragu status
+            // Highlight answered questions in green
+            if (answers[index] !== null) {
+                btn.classList.add('answered');
+            } else {
+                btn.classList.remove('answered');
+            }
+            // Highlight ragu-ragu questions in yellow
+            if (raguRagu[index] && answers[index] !== null) {
+                btn.classList.add('ragu-ragu');
+            } else {
+                btn.classList.remove('ragu-ragu');
+            }
         });
 
         // Enable/Disable Next and Previous buttons
@@ -129,7 +181,8 @@
         } else if (direction === 'prev' && currentQuestionIndex > 1) {
             currentQuestionIndex--;
         }
-        updateQuestion(); // Update question after changing index
+        // Update question after changing index
+        updateQuestion();
     }
 
     // Function to navigate to a specific question from the Question Map
@@ -138,58 +191,42 @@
         updateQuestion(); // Update question after navigating
     }
 
-    // Function to handle answer selection
+    // Function to handle answer selection and toggling
     function selectAnswer(button, optionId) {
-        document.querySelectorAll('.answer-btn').forEach(btn => btn.classList.remove('active'));
-        button.classList.add('active'); // Mark the clicked button as active
+        const questionIndex = currentQuestionIndex - 1; // Get the current question index
 
-        const questionIndex = currentQuestionIndex;
-
-        // Save answer locally
-        answers[questionIndex - 1] = optionId;
-
-        // Send answer to the server
-        fetch(`/quiz/${questionIndex}/answer`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': '{{ csrf_token() }}',
-            },
-            body: JSON.stringify({ answer: optionId }),
-        })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    if (data.nextQuestion) {
-                        questions[data.currentQuestionIndex - 1] = data.nextQuestion; // Update question data
-                        currentQuestionIndex = data.currentQuestionIndex;
-                        updateQuestion(); // Show the next question
-                    }
-                } else {
-                    alert('Failed to save the answer.');
-                }
-            })
-            .catch(error => console.error('Error:', error));
-    }
-
-    // Function to mark question as "Ragu-Ragu"
-    function markAsRagu() {
-        const mapButton = document.getElementById(`map-btn-${currentQuestionIndex}`);
-
-        // Toggle ragu-ragu status
-        raguQuestions[currentQuestionIndex - 1] = !raguQuestions[currentQuestionIndex - 1];
-
-        // Update Question Map button
-        if (raguQuestions[currentQuestionIndex - 1]) {
-            mapButton.classList.add('ragu-ragu');
+        // If the same button is clicked again, deselect the answer
+        if (answers[questionIndex] === optionId) {
+            button.classList.remove('answered'); // Remove green color from the previously selected option
+            answers[questionIndex] = null; // Clear the answer
         } else {
-            mapButton.classList.remove('ragu-ragu');
+            // Mark the new selected button as active
+            document.querySelectorAll('.answer-btn').forEach(btn => btn.classList.remove('answered')); // Remove green from all options
+            button.classList.add('answered'); // Add green to the selected button
+            answers[questionIndex] = optionId; // Store the selected answer
         }
+
+        // Update the question map button color
+        updateQuestion();
     }
 
-    // Initialize the first question on page load
-    document.addEventListener('DOMContentLoaded', updateQuestion);
-</script>
+    // Function to mark a question as "ragu-ragu" (uncertain)
+    function markRaguRagu() {
+        const questionIndex = currentQuestionIndex - 1;
+        
+        // Toggle the ragu-ragu state
+        raguRagu[questionIndex] = !raguRagu[questionIndex];
+        
+        // Toggle the check mark in the Ragu-Ragu button
+        const raguBtn = document.getElementById('ragu-ragu-btn');
+        raguBtn.classList.toggle('checked', raguRagu[questionIndex]);
 
+        // Apply color changes based on the new ragu-ragu state
+        updateQuestion(); // Update question map and question state
+    }
+
+    // Initial question load
+    updateQuestion();
+</script>
 </body>
 </html>
